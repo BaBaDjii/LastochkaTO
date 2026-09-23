@@ -1,0 +1,60 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/tools/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/build-tools/35.0.0" >> "$GITHUB_PATH"
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "sdkmanager=$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" >> "$GITHUB_ENV"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            echo "sdkmanager=$(command -v sdkmanager)" >> "$GITHUB_ENV"
+          else
+            find /usr/local/lib/android -name sdkmanager -type f -print || true
+            exit 1
+          fi
+
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | "$sdkmanager" --licenses || true
+          "$sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10"
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LastochkaTO-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
